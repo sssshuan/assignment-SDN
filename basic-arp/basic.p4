@@ -45,10 +45,10 @@ header arp_t {
 }
 
 header arp_ipv4_t {
-    macAddr_t  sha; //src mac
-    ip4Addr_t spa; //src ip 
-    macAddr_t  tha; // dst mac
-    ip4Addr_t tpa; // dst ip
+    macAddr_t  sha; //src mac address (注意与 以太网帧的MAC地址 作区别)
+    ip4Addr_t spa; //src ip address
+    macAddr_t  tha; // dst mac address (注意与 以太网帧的MAC地址 作区别)
+    ip4Addr_t tpa; // dst ip address
 }
 
 const bit<16> ARP_HTYPE_ETHERNET = 0x0001;
@@ -59,12 +59,11 @@ const bit<16> ARP_OPER_REQUEST   = 1;
 const bit<16> ARP_OPER_REPLY     = 2;
 
 
+// User-Defined metadata
 struct metadata {
-    ip4Addr_t dst_ipv4; 
-    macAddr_t  mac_da;
-    macAddr_t  mac_sa;
+    ip4Addr_t dst_ipv4; // dst ip
+    macAddr_t  mac_da; // dst MAC
     egressSpec_t   egress_port;
-    macAddr_t  my_mac;
 }
 
 struct headers {
@@ -108,13 +107,13 @@ parser MyParser(packet_in packet,
 
     state parse_arp_ipv4 {
         packet.extract(hdr.arp_ipv4);
-        meta.dst_ipv4 = hdr.arp_ipv4.tpa;
+        meta.dst_ipv4 = hdr.arp_ipv4.tpa; //存下目的ip
         transition accept;
     }
 
     state parse_ipv4 {
         packet.extract(hdr.ipv4);
-        meta.dst_ipv4 = hdr.ipv4.dstAddr;
+        meta.dst_ipv4 = hdr.ipv4.dstAddr; //存下目的ip
         transition accept;
     }
 
@@ -141,31 +140,30 @@ control MyIngress(inout headers hdr,
         mark_to_drop(standard_metadata);
     }
 
+	/*
+	 * dstAddr: sX-runtime.json里流表规则根据 ARP请求报文的目的IP 匹配成功后所给的 目的主机的MAC地址
+	 * port: 输出端口，只对ipv4转发有用
+	 */
     action set_dst_info(macAddr_t dstAddr,
                         egressSpec_t  port) {
-        meta.mac_da      = dstAddr;
-        //meta.mac_sa      = mac_sa;
-        meta.mac_sa      = hdr.ethernet.dstAddr;
+        meta.mac_da      = dstAddr; 
         meta.egress_port = port;
     }
 
+	/*
+	 * ipv4转发
+	 */
     action ipv4_forward() {
-        hdr.ethernet.dstAddr = meta.mac_da;
-        hdr.ethernet.srcAddr = meta.mac_sa;
-        hdr.ipv4.ttl         = hdr.ipv4.ttl - 1;
-        
         standard_metadata.egress_spec = meta.egress_port;
+        hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
+        hdr.ethernet.dstAddr = meta.mac_da;
+        hdr.ipv4.ttl         = hdr.ipv4.ttl - 1;
     }
 
-    //action ipv4_forward(macAddr_t dstAddr, egressSpec_t port) {
-    //    standard_metadata.egress_spec = port;
-    //    hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
-    //    hdr.ethernet.dstAddr = dstAddr;
-    //    hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
-    //}
-
     table ipv4_lpm {
-        key     = { meta.dst_ipv4 : lpm; }
+        key = { 
+        	meta.dst_ipv4 : lpm;
+        }
         actions = { 
             set_dst_info;
             drop;  
@@ -174,21 +172,24 @@ control MyIngress(inout headers hdr,
         default_action = drop();
     }
 
+	/*
+	 * arp响应，采用的方法是交换机直接把 ARP请求报文目的IP所对应的目的主机MAC地址 返回给源主机
+	 */
     action send_arp_reply() {
-        hdr.ethernet.dstAddr = hdr.arp_ipv4.sha;
-        hdr.ethernet.srcAddr = meta.mac_da;
+        hdr.ethernet.dstAddr = hdr.arp_ipv4.sha; // ARP请求报文的源MAC地址 作为 ARP响应帧目的MAC地址
+        hdr.ethernet.srcAddr = meta.mac_da; 	 // ARP请求报文的目的IP所对应的主机MAC地址 作为 ARP响应帧的源MAC
         
         hdr.arp.oper         = ARP_OPER_REPLY;
         
-        hdr.arp_ipv4.tha     = hdr.arp_ipv4.sha;
-        hdr.arp_ipv4.tpa     = hdr.arp_ipv4.spa;
-        hdr.arp_ipv4.sha     = meta.mac_da;
-        hdr.arp_ipv4.spa     = meta.dst_ipv4;
+        hdr.arp_ipv4.tha     = hdr.arp_ipv4.sha; // ARP请求报文的源MAC地址 作为 ARP响应报文的目的MAC地址
+        hdr.arp_ipv4.tpa     = hdr.arp_ipv4.spa; // ARP请求报文的源IP 作为 ARP响应报文的目的IP
+        hdr.arp_ipv4.sha     = meta.mac_da;      // ARP请求报文的目的IP所对应的主机的MAC地址 作为 ARP响应报文的源MAC地址
+        hdr.arp_ipv4.spa     = meta.dst_ipv4;    // ARP请求报文的目的IP 作为 ARP响应报文的源IP
 
-        standard_metadata.egress_spec = standard_metadata.ingress_port;
+        standard_metadata.egress_spec = standard_metadata.ingress_port; // 从哪个端口来的 从哪个端口回去
     }
 
-
+	 
     table forward {
         key = {
             hdr.arp.isValid()      : exact;
@@ -202,20 +203,18 @@ control MyIngress(inout headers hdr,
             drop;
         }
         const default_action = drop();
-
+        
+		//匹配规则
         const entries = {
-            ( true, ARP_OPER_REQUEST, true, false) :
-                                                         send_arp_reply();
-            ( false, _,               false, true) :
-                                                         ipv4_forward();
+            ( true, ARP_OPER_REQUEST, true, false) : send_arp_reply(); //arp响应
+            ( false, 		_		, false, true) : ipv4_forward(); // ipv4转发
         }
     }
 
 
     apply {
-        //meta.my_mac = 0x000102030405;
-        ipv4_lpm.apply();
-        forward.apply();
+        ipv4_lpm.apply(); // 先根据目的ip匹配，得到目的ip主机的MAC地址（下一跳MAC地址）和 端口
+        forward.apply();  // 应用转发流表
     }
 }
 
@@ -261,7 +260,6 @@ control MyComputeChecksum(inout headers hdr, inout metadata meta) {
 control MyDeparser(packet_out packet, in headers hdr) {
     apply {
         packet.emit(hdr.ethernet);
-        /* ARP Case */
         packet.emit(hdr.arp);
         packet.emit(hdr.arp_ipv4);
         packet.emit(hdr.ipv4);
@@ -280,3 +278,4 @@ MyEgress(),
 MyComputeChecksum(),
 MyDeparser()
 ) main;
+

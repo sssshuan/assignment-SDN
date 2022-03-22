@@ -1,5 +1,3 @@
-[TOC]
-
 
 
 # Basic Forwarding Plus ARP

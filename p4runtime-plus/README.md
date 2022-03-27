@@ -121,13 +121,13 @@ readTableRules(p4info_helper, s3)
 
 
 
-![截屏2022-03-27 下午8.12.06](/Users/shenhuan/Desktop/截屏2022-03-27 下午8.12.06.png)
+![截屏2022-03-27 下午8.12.06](https://tva1.sinaimg.cn/large/e6c9d24ely1h0oq5bk93jj20sl0juad3.jpg) 
 
-![截屏2022-03-27 下午8.12.48](/Users/shenhuan/Desktop/截屏2022-03-27 下午8.12.48.png)
+![截屏2022-03-27 下午8.12.48](https://tva1.sinaimg.cn/large/e6c9d24ely1h0oq5hv9flj20rc0b03zy.jpg) 
 
 > 终端2
 
-![截屏2022-03-27 下午8.45.07](/Users/shenhuan/Desktop/截屏2022-03-27 下午8.45.07.png)
+![截屏2022-03-27 下午8.45.07](https://tva1.sinaimg.cn/large/e6c9d24ely1h0oq7samilj20mf04p74f.jpg) 
 
 
 
@@ -135,7 +135,7 @@ readTableRules(p4info_helper, s3)
 
 > 终端1
 
-![截屏2022-03-27 下午8.47.05](/Users/shenhuan/Desktop/截屏2022-03-27 下午8.47.05.png)
+![截屏2022-03-27 下午8.47.05](https://tva1.sinaimg.cn/large/e6c9d24ely1h0oqad5ylbj20p70kzgpc.jpg)
 
 > 终端2
 

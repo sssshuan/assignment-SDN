@@ -1,140 +1,107 @@
-# Load Balancing 
+# load_balance With P4Runtime
 
-In this exercise, you will implement a form of load balancing based on
-a simple version of Equal-Cost Multipath Forwarding. The switch you
-will implement will use two tables to forward packets to one of two
-destination hosts at random. The first table will use a hash function
-(applied to a 5-tuple consisting of the source and destination IP
-addresses, IP protocol, and source and destination TCP ports) to
-select one of two hosts. The second table will use the computed hash
-value to forward the packet to the selected host.
+> 在 [load_balance](https://github.com/p4lang/tutorials/tree/master/exercises/load_balance) 实验的基础上，去掉流规则静态下发，实现P4Runtime的动态下发。
 
-> **Spoiler alert:** There is a reference solution in the `solution`
-> sub-directory. Feel free to compare your implementation to the
-> reference.
 
-## Step 1: Run the (incomplete) starter code
 
-The directory with this README also contains a skeleton P4 program,
-`load_balance.p4`, which initially drops all packets.  Your job (in
-the next step) will be to extend it to properly forward packets.
+#### 步骤1：去掉 topology.json 里交换机的配置
 
-Before that, let's compile the incomplete `load_balance.p4` and bring
-up a switch in Mininet to test its behavior.
+![截屏2022-04-23 下午4.24.51](https://tva1.sinaimg.cn/large/e6c9d24ely1h1jqfj7qdhj20m20c9ab6.jpg)
 
-1. In your shell, run:
-   ```bash
-   make
-   ```   
-   This will:
-   * compile `load_balance.p4`, and
-   * start a Mininet instance with three switches (`s1`, `s2`, `s3`) configured
-     in a triangle, each connected to one host (`h1`, `h2`, `h3`).
-   * The hosts are assigned IPs of `10.0.1.1`, `10.0.2.2`, etc.  
-   * We use the IP address 10.0.0.1 to indicate traffic that should be
-     load balanced between `h2` and `h3`.
 
-2. You should now see a Mininet command prompt.  Open three terminals
-   for `h1`, `h2` and `h3`, respectively:
-   ```bash
-   mininet> xterm h1 h2 h3
-   ```   
-3. Each host includes a small Python-based messaging client and
-   server.  In `h2` and `h3`'s XTerms, start the servers:
-   ```bash
-   ./receive.py
-   ```
-4. In `h1`'s XTerm, send a message from the client:
-   ```bash
-   ./send.py 10.0.0.1 "P4 is cool"
-   ```
-   The message will not be received.
-5. Type `exit` to leave each XTerm and the Mininet command line.
 
-The message was not received because each switch is programmed with
-`load_balance.p4`, which drops all packets on arrival.  Your job is to
-extend this file.
+#### 步骤2：新建 `mycontroller.py`
 
-### A note about the control plane
+-  `P4Info`、`json`文件路径
 
-P4 programs define a packet-processing pipeline, but the rules
-governing packet processing are inserted into the pipeline by the
-control plane.  When a rule matches a packet, its action is invoked
-with parameters supplied by the control plane as part of the rule.
+![截屏2022-04-23 下午4.29.21](https://tva1.sinaimg.cn/large/e6c9d24ely1h1jqkfq6p2j20m204zjsd.jpg)
 
-In this exercise, the control plane logic has already been
-implemented.  As part of bringing up the Mininet instance, the `make`
-script will install packet-processing rules in the tables of each
-switch. These are defined in the `sX-runtime.json` files.
+- 写入规则的函数
 
-## Step 2: Implement Load Balancing
+```c
+def write_ecmp_group_rules(p4info_helper, ingress_sw, dst_ip_addr,
+                            ecmp_base, ecmp_max):
+    table_entry = p4info_helper.buildTableEntry(
+        table_name="MyIngress.ecmp_group",
+        match_fields={
+            "hdr.ipv4.dstAddr": (dst_ip_addr, 32)
+        },
+        action_name="MyIngress.set_ecmp_select",
+        action_params={
+            "ecmp_base": ecmp_base,
+            "ecmp_count": ecmp_max
+        })
+    ingress_sw.WriteTableEntry(table_entry)
 
-The `load_balance.p4` file contains a skeleton P4 program with key
-pieces of logic replaced by `TODO` comments.  These should guide your
-implementation---replace each `TODO` with logic implementing the
-missing piece.
 
-A complete `load_balance.p4` will contain the following components:
+def write_ecmp_nhop_rules(p4info_helper, ingress_sw, ecmp_select, 
+                        nex_hop_ip, nex_hop_mac, egress_port):
+    table_entry = p4info_helper.buildTableEntry(
+        table_name="MyIngress.ecmp_nhop",
+        match_fields={
+            "meta.ecmp_select": ecmp_select
+        },
+        action_name="MyIngress.set_nhop",
+        action_params={
+            "nhop_dmac": nex_hop_mac,
+            "nhop_ipv4": nex_hop_ip,
+            "port" : egress_port
+        })
+    ingress_sw.WriteTableEntry(table_entry)
 
-1. Header type definitions for Ethernet (`ethernet_t`) and IPv4 (`ipv4_t`).
-2. Parsers for Ethernet and IPv4 that populate `ethernet_t` and `ipv4_t` fields.
-3. An action to drop a packet, using `mark_to_drop()`.
-4. **TODO:** An action (called `set_ecmp_select`), which will:
-	1. Hashes the 5-tuple specified above using the `hash` extern
-	2. Stores the result in the `meta.ecmp_select` field
-5. **TODO:** A control that:
-    1. Applies the `ecmp_group` table.
-    2. Applies the `ecmp_nhop` table.
-6. A deparser that selects the order in which fields inserted into the outgoing
-   packet.
-7. A `package` instantiation supplied with the parser, control, and deparser.
-    > In general, a package also requires instances of checksum verification
-    > and recomputation controls.  These are not necessary for this tutorial
-    > and are replaced with instantiations of empty controls.
 
-## Step 3: Run your solution
-
-Follow the instructions from Step 1.  This time, your message from
-`h1` should be delivered to `h2` or `h3`. If you send several
-messages, some should be received by each server.
-
-### Troubleshooting
-
-There are several ways that problems might manifest:
-
-1. `load_balance.p4` fails to compile.  In this case, `make` will
-report the error emitted from the compiler and stop.
-
-2. `load_balance.p4` compiles but does not support the control plane
-rules in the `sX-runtime.json` files that `make` tries to install
-using the Python controller.  In this case, `make` will log the
-controller output in the `logs` directory. Use the error messages to
-fix your `load_balance.p4` implementation.
-
-3. `load_balance.p4` compiles, and the control plane rules are
-installed, but the switch does not process packets in the desired way.
-The `/tmp/p4s.<switch-name>.log` files contain trace messages
-describing how each switch processes each packet.  The output is
-detailed and can help pinpoint logic errors in your implementation.
-
-#### Cleaning up Mininet
-
-In the latter two cases above, `make` may leave a Mininet instance
-running in the background.  Use the following command to clean up
-these instances:
-
-```bash
-mn -c
+def write_send_frame_rules(p4info_helper, ingress_sw, egress_port, smac):
+    table_entry = p4info_helper.buildTableEntry(
+        table_name="MyEgress.send_frame",
+        match_fields={
+            "standard_metadata.egress_port": egress_port
+        },
+        action_name="MyEgress.rewrite_mac",
+        action_params={
+            "smac": smac
+        })
+    ingress_sw.WriteTableEntry(table_entry)
 ```
 
-## Next Steps
+- 在main函数里的相关调用
 
-Congratulations, your implementation works! Move on to [Multi-Hop Route Inspection](../mri).
+```c
+ # Write the rules 
+        write_ecmp_group_rules(p4info_helper, ingress_sw=s1, dst_ip_addr="10.0.0.1",
+                                 ecmp_base=0, ecmp_max=2)
+        write_ecmp_group_rules(p4info_helper, ingress_sw=s2, dst_ip_addr="10.0.2.2",
+                                 ecmp_base=0, ecmp_max=1)
+        write_ecmp_group_rules(p4info_helper, ingress_sw=s3, dst_ip_addr="10.0.3.3",
+                                 ecmp_base=0, ecmp_max=1)
 
-## Relevant Documentation
+        write_ecmp_nhop_rules(p4info_helper, s1, ecmp_select=0, nex_hop_ip="10.0.2.2", 
+                             nex_hop_mac="00:00:00:00:01:02", egress_port=2)
+        write_ecmp_nhop_rules(p4info_helper, s1, ecmp_select=1, nex_hop_ip="10.0.3.3", 
+                             nex_hop_mac="00:00:00:00:01:03", egress_port=3)
+        write_ecmp_nhop_rules(p4info_helper, s2, ecmp_select=0, nex_hop_ip="10.0.2.2", 
+                             nex_hop_mac="08:00:00:00:02:02", egress_port=1)
+        write_ecmp_nhop_rules(p4info_helper, s3, ecmp_select=0, nex_hop_ip="10.0.3.3", 
+                             nex_hop_mac="08:00:00:00:03:03", egress_port=1)
 
-The documentation for P4_16 and P4Runtime is available [here](https://p4.org/specs/)
+        write_send_frame_rules(p4info_helper, s1, egress_port=2, smac="00:00:00:01:02:00")
+        write_send_frame_rules(p4info_helper, s1, egress_port=3, smac="00:00:00:01:03:00")
+        write_send_frame_rules(p4info_helper, s2, egress_port=1, smac="00:00:00:02:01:00")
+        write_send_frame_rules(p4info_helper, s3, egress_port=1, smac="00:00:00:03:01:00")
+```
 
-All excercises in this repository use the v1model architecture, the documentation for which is available at:
-1. The BMv2 Simple Switch target document accessible [here](https://github.com/p4lang/behavioral-model/blob/master/docs/simple_switch.md) talks mainly about the v1model architecture.
-2. The include file `v1model.p4` has extensive comments and can be accessed [here](https://github.com/p4lang/p4c/blob/master/p4include/v1model.p4).
+
+
+#### 步骤3：重新运行
+
+- 运行 `./mycontroller.py` 之前，h1发送的消息不会被收到
+
+![截屏2022-04-23 下午6.02.21](https://tva1.sinaimg.cn/large/e6c9d24ely1h1jt9d4hafj20wh0lctaq.jpg)
+
+- 运行 `./mycontroller.py`
+
+![截屏2022-04-23 下午5.58.35](https://tva1.sinaimg.cn/large/e6c9d24ely1h1jt4uxqn1j20t50guwgo.jpg)
+
+- 然后再发送消息，结果同静态下发一样，h1发送的消息有些被`h2`收到有些被`h3`收到
+
+![截屏2022-04-23 下午6.03.50](https://tva1.sinaimg.cn/large/e6c9d24ely1h1jtapblw6j20wh0lcq6b.jpg)
+

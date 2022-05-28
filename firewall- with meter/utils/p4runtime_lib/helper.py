@@ -202,6 +202,20 @@ class P4InfoHelper(object):
                 ])
         return table_entry
 
+    def buildMeterEntry(self, meter_name, cir, cburst, pir, pburst, index=None):
+        meter_entry = p4runtime_pb2.MeterEntry()
+        meter_entry.meter_id = self.get_meters_id(meter_name)
+        if index is not None:
+            meter_entry.index = index # 不指定 默认对所有 meter 全部都一样配置
+        config = p4runtime_pb2.MeterConfig()
+        config.cir = cir # bytes
+        config.cburst = cburst #bytes
+        config.pir = pir #bytes
+        config.pburst = pburst #bytes
+        meter_entry.config = config
+        return meter_entry
+
+
     def buildMulticastGroupEntry(self, multicast_group_id, replicas):
         mc_entry = p4runtime_pb2.PacketReplicationEngineEntry()
         mc_entry.multicast_group_entry.multicast_group_id = multicast_group_id

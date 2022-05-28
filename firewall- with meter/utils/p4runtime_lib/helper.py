@@ -206,13 +206,15 @@ class P4InfoHelper(object):
         meter_entry = p4runtime_pb2.MeterEntry()
         meter_entry.meter_id = self.get_meters_id(meter_name)
         if index is not None:
-            meter_entry.index = index # 不指定 默认对所有 meter 全部都一样配置
+            x = p4runtime_pb2.Index()
+            x.index = index
+            meter_entry.index.CopyFrom(x)
         config = p4runtime_pb2.MeterConfig()
         config.cir = cir # bytes
         config.cburst = cburst #bytes
         config.pir = pir #bytes
         config.pburst = pburst #bytes
-        meter_entry.config = config
+        meter_entry.config.CopyFrom(config)
         return meter_entry
 
 

@@ -163,6 +163,7 @@ class GrpcRequestLogger(grpc.UnaryUnaryClientInterceptor,
 
     def __init__(self, log_file):
         self.log_file = log_file
+        #print("031902513"+log_file)
         with open(self.log_file, 'w') as f:
             # Clear content if it exists.
             f.write("")

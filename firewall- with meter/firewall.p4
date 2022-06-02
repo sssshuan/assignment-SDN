@@ -5,7 +5,9 @@
 /* CONSTANTS */
 
 const bit<16> TYPE_IPV4 = 0x800;
+const bit<16> TYPE_IPV6 = 0x86DD;
 const bit<8>  TYPE_TCP  = 6;
+const bit<8>  TYPE_UDP  = 17;
 
 #define BLOOM_FILTER_ENTRIES 4096
 #define BLOOM_FILTER_BIT_WIDTH 1
@@ -18,7 +20,6 @@ typedef bit<9>  egressSpec_t;
 typedef bit<48> macAddr_t;
 typedef bit<32> ip4Addr_t;
 typedef bit<128> ip6Addr_t;
-typedef bit<128> IPv4ORv6Address;
 
 typedef bit<2> meter_color_t;
 const bit<32> meter_length = 1024;
@@ -76,6 +77,13 @@ header tcp_t{
     bit<16> urgentPtr;
 }
 
+header udp_t {
+    bit<16> srcPort;
+    bit<16> dstPort;
+    bit<16> length_;
+    bit<16> checksum;
+}
+
 struct metadata {
     /* empty */
     meter_color_t meter_tag;
@@ -85,7 +93,10 @@ struct metadata {
 struct headers {
     ethernet_t   ethernet;
     ipv4_t       ipv4;
+    ipv6_t       ipv6;
+    udp_t        udp;
     tcp_t        tcp;
+
 }
 
 /*************************************************************************
@@ -105,6 +116,7 @@ parser MyParser(packet_in packet,
         packet.extract(hdr.ethernet);
         transition select(hdr.ethernet.etherType) {
             TYPE_IPV4: parse_ipv4;
+            TYPE_IPV6: parse_ipv6;
             default: accept;
         }
     }
@@ -112,15 +124,31 @@ parser MyParser(packet_in packet,
     state parse_ipv4 {
         packet.extract(hdr.ipv4);
         transition select(hdr.ipv4.protocol){
-            TYPE_TCP: tcp;
+            TYPE_TCP: parse_tcp;
+            TYPE_UDP: parse_udp;
             default: accept;
         }
     }
 
-    state tcp {
+    state parse_ipv6 {
+        packet.extract(hdr.ipv6);
+        transition select(hdr.ipv6.next_header) {
+            TYPE_TCP: parse_tcp;
+            TYPE_UDP: parse_udp;
+            default:accept;
+        }
+    }
+
+    state parse_tcp {
        packet.extract(hdr.tcp);
        transition accept;
     }
+
+    state parse_udp {
+       packet.extract(hdr.udp);
+       transition accept;
+    }
+
 }
 
 /*************************************************************************
@@ -275,6 +303,8 @@ control MyDeparser(packet_out packet, in headers hdr) {
     apply {
         packet.emit(hdr.ethernet);
         packet.emit(hdr.ipv4);
+        packet.emit(hdr.ipv6);
+        packet.emit(hdr.udp);
         packet.emit(hdr.tcp);
     }
 }

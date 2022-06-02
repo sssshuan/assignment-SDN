@@ -139,7 +139,14 @@ control MyVerifyChecksum(inout headers hdr, inout metadata meta) {
 control MyIngress(inout headers hdr,
                   inout metadata meta,
                   inout standard_metadata_t standard_metadata) {
+    // meter
     meter(meter_length, MeterType.bytes) my_meter;
+    // ban list
+    register<bit<BLOOM_FILTER_BIT_WIDTH>>(BLOOM_FILTER_ENTRIES) bloom_filter_1;
+    register<bit<BLOOM_FILTER_BIT_WIDTH>>(BLOOM_FILTER_ENTRIES) bloom_filter_2;
+    bit<32> reg_pos_one; bit<32> reg_pos_two;
+    bit<1> reg_val_one; bit<1> reg_val_two;
+
 
     action drop() {
         mark_to_drop(standard_metadata);
@@ -167,11 +174,29 @@ control MyIngress(inout headers hdr,
 
     action calc_meter_index() {
         //ipv4.protocol is used to differentiate different traffic types
-        hash(meta.meter_index, HashAlgorithm.crc16, (bit<1>)0, {hdr.ipv4.srcAddr, hdr.ipv4.dstAddr}, meter_length);
+        hash(meta.meter_index, HashAlgorithm.crc16, (bit<1>)0, {hdr.ipv4.srcAddr, 
+                                                                hdr.ipv4.dstAddr, 
+                                                                hdr.ipv4.protocol},
+                                                                meter_length);
     }
-
+    // check sending rate
     action meter_action(){
         my_meter.execute_meter<meter_color_t>(meta.meter_index, meta.meter_tag);
+    }
+
+    action calc_register_index(){
+       //Get register position
+       hash(reg_pos_one, HashAlgorithm.crc16, (bit<32>)0, {hdr.ipv4.srcAddr},
+                                                           (bit<32>)BLOOM_FILTER_ENTRIES);
+
+       hash(reg_pos_two, HashAlgorithm.crc32, (bit<32>)0, {hdr.ipv4.srcAddr},
+                                                           (bit<32>)BLOOM_FILTER_ENTRIES);
+    }
+
+    // add ip to banlist
+    action ban() {
+        bloom_filter_1.write(reg_pos_one, 1);
+        bloom_filter_2.write(reg_pos_two, 1);
     }
 
     table m_filter {
@@ -180,6 +205,7 @@ control MyIngress(inout headers hdr,
         }
         actions = {
             drop;
+            ban;
             NoAction;
         }
         size = 3;
@@ -187,12 +213,20 @@ control MyIngress(inout headers hdr,
     }
     
     apply {
-
         if (hdr.ipv4.isValid()){
-            ipv4_lpm.apply();
-            if (hdr.tcp.isValid()){
+            // check ban list
+            calc_register_index();
+            bloom_filter_1.read(reg_val_one, reg_pos_one);
+            bloom_filter_2.read(reg_val_two, reg_pos_two);
+
+            if(reg_val_one == 1 && reg_val_two == 1) { // in banlist
+                drop();
+            }else {
+                ipv4_lpm.apply();
+                // test sending rate with meter
                 calc_meter_index();
                 meter_action();
+                // forward, drop or ban according to sending rate 
                 m_filter.apply();
             }
         }

@@ -18,7 +18,7 @@ import p4runtime_lib.helper
 
 def write_meter_rule(p4info_helper, ingress_sw, meter_name, cir, cburst, pir, pburst):
     """
-    :param cir: bits/s, set 8000000 if you want rate 1MB
+    :param cir: byte/s, set 1000000/8=125000 if you want rate 1Mbps
     :param cburst: bits
     :param pir: bits/s
     """
@@ -58,13 +58,13 @@ def writeIpv4Rules(p4info_helper, ingress_sw, dst_eth_addr, egress_port, dst_ip_
     print("Installed ipv4 forward Rule on %s" % ingress_sw.name)
 
 
-def write_m_filter_rule(p4info_helper, ingress_sw, meter_tag):
+def write_m_filter_rule(p4info_helper, ingress_sw, meter_tag, action_name):
     table_entry = p4info_helper.buildTableEntry(
         table_name="MyIngress.m_filter",
         match_fields={
             "meta.meter_tag": meter_tag
         },
-        action_name="MyIngress.drop",
+        action_name=action_name,
         action_params={}
         )
     ingress_sw.WriteTableEntry(table_entry)
@@ -113,8 +113,8 @@ def write_s1_rules(p4info_helper, ingress_sw):
     # s1 -> s4
     writeIpv4Rules(p4info_helper, ingress_sw=ingress_sw, dst_eth_addr="08:00:00:00:04:00", egress_port=4,
                    dst_ip_addr="10.0.4.4", mask_bits=32)
-    write_m_filter_rule(p4info_helper, ingress_sw, meter_tag=1)
-    write_m_filter_rule(p4info_helper, ingress_sw, meter_tag=2)
+    write_m_filter_rule(p4info_helper, ingress_sw, meter_tag=1, action_name="MyIngress.drop")
+    write_m_filter_rule(p4info_helper, ingress_sw, meter_tag=2, action_name="MyIngress.ban")
 
 
 def write_s2_rules(p4info_helper, ingress_sw):
@@ -214,8 +214,11 @@ def main(p4info_file_path, bmv2_file_path):
         write_s4_rules(p4info_helper, s4)
 
         #cir = 4 Mbits/s  pir = 6 Mbits/s
-        write_meter_rule(p4info_helper, s1, "my_meter", 4000000, 1000000, 6000000, 44*1500)
-        #write_meter_rule(p4info_helper, s1, "my_meter", 1000000, 1000*200, 2000000, 2000*125)
+        #write_meter_rule(p4info_helper, s1, "my_meter", 2*1000000, 1000000, 2*1000000, 44*1500)
+
+        #write_meter_rule(p4info_helper, s1, "my_meter", 125000, 1000*125, 250000, 2000*125)
+        #write_meter_rule(p4info_helper, s1, "my_meter", 250000, 1000*125, 250000, 1000*125)
+        write_meter_rule(p4info_helper, s1, "my_meter", 125000, 1000*125, 250000, 1000*125)
 
         # read table entries from s1 s2 and s3
         readTableRules(p4info_helper, s1)

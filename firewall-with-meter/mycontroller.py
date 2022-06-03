@@ -213,12 +213,9 @@ def main(p4info_file_path, bmv2_file_path):
         write_s3_rules(p4info_helper, s3)
         write_s4_rules(p4info_helper, s4)
 
-        #cir = 4 Mbits/s  pir = 6 Mbits/s
-        #write_meter_rule(p4info_helper, s1, "my_meter", 2*1000000, 1000000, 2*1000000, 44*1500)
-
-        #write_meter_rule(p4info_helper, s1, "my_meter", 125000, 1000*125, 250000, 2000*125)
+        #cir = 1 Mbits/s  pir = 2 Mbits/s
         #write_meter_rule(p4info_helper, s1, "my_meter", 250000, 1000*125, 250000, 1000*125)
-        write_meter_rule(p4info_helper, s1, "my_meter", 125000, 1000*125, 250000, 1000*125)
+        write_meter_rule(p4info_helper, s1, "my_meter", 125000, 1000*125, 250000, 44*1500)
 
         # read table entries from s1 s2 and s3
         readTableRules(p4info_helper, s1)
